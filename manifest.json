@@ -4,7 +4,7 @@
   "version": "3.0.0",
   "minAppVersion": "1.0.0",
   "description": "iSeeU — import and visualise pentest tool outputs in Obsidian",
-  "author": "",
-  "authorUrl": "",
+  "author": "LifeTimeScriptKiddie",
+  "authorUrl": "https://github.com/LifeTimeScriptKiddie",
   "isDesktopOnly": false
 }
