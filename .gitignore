@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build artifacts / source files not needed for plugin release
+*.ts
+tsconfig.json
+package.json
+package-lock.json
+yarn.lock
+rollup.config.js
+esbuild.config.mjs
+
+# Local obsidian-releases fork (used for PR submission only)
+obsidian-releases/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
