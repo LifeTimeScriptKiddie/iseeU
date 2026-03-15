@@ -1,0 +1,255 @@
+/* iSeeU Plugin — all classes prefixed with iu- */
+
+/* ── Root container ── */
+.iu-root {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ── Tab bar ── */
+.iu-tab-bar {
+  display: flex;
+  flex-direction: row;
+  flex-shrink: 0;
+  gap: 2px;
+  padding: 6px 8px 0;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+}
+
+.iu-tab {
+  padding: 4px 12px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: var(--font-ui-small);
+  border-radius: 4px 4px 0 0;
+  transition: color 0.1s, border-color 0.1s;
+}
+
+.iu-tab:hover {
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
+}
+
+.iu-tab.active {
+  color: var(--interactive-accent);
+  border-bottom-color: var(--interactive-accent);
+  font-weight: 600;
+}
+
+/* ── Content area ── */
+.iu-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px;
+}
+
+/* ── Table shared styles ── */
+.iu-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-ui-small);
+}
+
+.iu-th {
+  text-align: left;
+  padding: 6px 8px;
+  border-bottom: 2px solid var(--background-modifier-border);
+  color: var(--text-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.iu-td {
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  color: var(--text-normal);
+  vertical-align: middle;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Clickable rows ── */
+.iu-clickable {
+  cursor: pointer;
+}
+
+.iu-clickable:hover td,
+.iu-clickable:hover {
+  background: var(--background-modifier-hover);
+}
+
+/* ── IP / hostname ── */
+.iu-ip-addr {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+}
+
+.iu-count {
+  text-align: center;
+  color: var(--text-muted);
+}
+
+/* ── Port number ── */
+.iu-port-num {
+  font-family: var(--font-monospace);
+  font-weight: 600;
+  color: var(--interactive-accent);
+}
+
+/* ── Timeline ── */
+.iu-timeline-date {
+  padding: 8px 4px 4px;
+  font-weight: 700;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-top: 8px;
+}
+
+.iu-timeline-entry {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 4px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.iu-timeline-entry:hover {
+  background: var(--background-modifier-hover);
+}
+
+.iu-timeline-time {
+  font-family: var(--font-monospace);
+  font-size: var(--font-ui-smaller);
+  color: var(--text-muted);
+  min-width: 36px;
+}
+
+.iu-timeline-type {
+  font-size: 14px;
+  min-width: 20px;
+  text-align: center;
+}
+
+.iu-timeline-title {
+  flex: 1;
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Severity badges ── */
+.iu-severity-badge {
+  display: inline-block;
+  padding: 2px 7px;
+  border-radius: 3px;
+  font-size: var(--font-ui-smaller);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #fff;
+}
+
+.iu-severity-critical {
+  background: #d63031;
+}
+
+.iu-severity-high {
+  background: #e17055;
+}
+
+.iu-severity-medium {
+  background: #fdcb6e;
+  color: #2d3436;
+}
+
+.iu-severity-low {
+  background: #0984e3;
+}
+
+.iu-severity-info {
+  background: #636e72;
+}
+
+/* ── Empty state ── */
+.iu-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--text-muted);
+  gap: 8px;
+}
+
+.iu-empty-state p {
+  margin: 0;
+  font-size: var(--font-ui-small);
+}
+
+.iu-empty-hint {
+  padding: 16px 8px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  font-style: italic;
+}
+
+.iu-timeline-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 4px 12px;
+  flex-wrap: wrap;
+}
+
+.iu-filter-label {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+}
+
+.iu-date-input {
+  font-size: var(--font-ui-small);
+  padding: 2px 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+.iu-filter-clear {
+  font-size: var(--font-ui-small);
+  padding: 2px 8px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.iu-filter-clear:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* ── Search bar ── */
+.iu-search-bar {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+}
+
+.iu-search-bar .search-input-container {
+  width: 100%;
+}
