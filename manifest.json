@@ -1,10 +1,10 @@
 {
   "id": "iseeu",
   "name": "iSeeU",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "minAppVersion": "1.0.0",
-  "description": "Import and visualise pentest tool outputs.",
-  "author": "LifeTimeScriptKiddie",
-  "authorUrl": "https://github.com/LifeTimeScriptKiddie",
+  "description": "iSeeU — import and visualise pentest tool outputs in Obsidian",
+  "author": "",
+  "authorUrl": "",
   "isDesktopOnly": false
 }

@@ -510,7 +510,7 @@ __export(main_exports, {
   default: () => ISeeUPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian13 = require("obsidian");
+var import_obsidian14 = require("obsidian");
 
 // types.ts
 var VIEW_TYPE = "iseeu";
@@ -2117,8 +2117,106 @@ ${pluginLines}
   return { created, skipped };
 }
 
-// importers/detect.ts
+// importers/custom.ts
 var import_obsidian10 = require("obsidian");
+async function importIseeUCustom(app, content, silent) {
+  var _a, _b;
+  const normalized = content.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
+  const lines = normalized.split("\n").filter((l) => l.trim().length > 0);
+  if (lines.length === 0)
+    return { created: 0, skipped: 0 };
+  let created = 0;
+  let skipped = 0;
+  const ipStates = /* @__PURE__ */ new Map();
+  for (const line of lines) {
+    let record;
+    try {
+      record = JSON.parse(line);
+    } catch (e) {
+      continue;
+    }
+    let ip = (_a = record.ip) != null ? _a : "";
+    if (!ip || ip.trim() === "") {
+      continue;
+    }
+    ip = ip.trim();
+    if (record.state !== void 0 && record.state !== "open") {
+      continue;
+    }
+    const portNum = parseInt(record.port, 10);
+    if (isNaN(portNum) || portNum <= 0) {
+      continue;
+    }
+    const protocol = (_b = record.protocol) != null ? _b : "tcp";
+    let ipState = ipStates.get(ip);
+    if (ipState == null) {
+      await ensureFolderHierarchy(app.vault, ip);
+      ipState = {
+        hostExisted: app.vault.getAbstractFileByPath(buildHostPath(ip)) != null,
+        meta: { status: "active" },
+        serviceLinks: [],
+        vulnLinks: [],
+        credLinks: []
+      };
+      ipStates.set(ip, ipState);
+    }
+    const servicePath = buildServicePath(ip, portNum, protocol);
+    ipState.serviceLinks.push(noteBasename(servicePath));
+    if (app.vault.getAbstractFileByPath(servicePath) == null) {
+      const serviceName = record.service || protocol;
+      const frontmatter = buildFrontmatter({
+        type: "service",
+        ip,
+        port: portNum,
+        protocol,
+        service: record.service,
+        version: record.version,
+        status: "open",
+        found: record.found
+      });
+      let body = `# Service: ${serviceName} on ${ip}
+
+## Notes
+
+`;
+      if (record.banner && record.banner.trim() !== "") {
+        body += `## Banner
+
+${record.banner}
+
+`;
+      }
+      if (record.http_status !== void 0 && record.http_status > 0) {
+        const httpTitle = record.http_title || "";
+        body += `## HTTP
+
+**Status**: ${record.http_status}
+**Title**: ${httpTitle}
+
+`;
+      }
+      await app.vault.create(servicePath, frontmatter + body);
+      created += 1;
+    } else {
+      skipped += 1;
+    }
+  }
+  for (const [ip, ipState] of ipStates) {
+    await upsertHostSummary(app, ip, ipState.meta, ipState.serviceLinks, [], []);
+    if (ipState.hostExisted) {
+      skipped += 1;
+    } else {
+      created += 1;
+    }
+  }
+  if (!silent) {
+    new import_obsidian10.Notice(`iSeeU Custom import: ${created} created, ${skipped} skipped`);
+  }
+  return { created, skipped };
+}
+
+// importers/detect.ts
+var import_obsidian11 = require("obsidian");
 function detectFormat(content, filename) {
   var _a, _b;
   const ext = (_b = (_a = filename.split(".").pop()) == null ? void 0 : _a.toLowerCase()) != null ? _b : "";
@@ -2128,6 +2226,9 @@ function detectFormat(content, filename) {
     return { type: "nmap-grepable" };
   if (ext === "json" || ext === "jsonl") {
     const sniff = content.slice(0, 2e3);
+    if (sniff.includes('"scanner":"iseeu"') || sniff.includes('"scanner": "iseeu"')) {
+      return { type: "iseeu-custom" };
+    }
     if (sniff.includes('"template-id"'))
       return { type: "nuclei-jsonl" };
     if (sniff.includes('"plugins"') && (sniff.includes('"target"') || sniff.includes('"http_status"'))) {
@@ -2180,22 +2281,22 @@ async function importFolderRecursive(app, folderPath) {
   function collectFiles(folder) {
     const files = [];
     for (const child of folder.children) {
-      if (child instanceof import_obsidian10.TFile)
+      if (child instanceof import_obsidian11.TFile)
         files.push(child);
-      else if (child instanceof import_obsidian10.TFolder)
+      else if (child instanceof import_obsidian11.TFolder)
         files.push(...collectFiles(child));
     }
     return files;
   }
   const root = app.vault.getAbstractFileByPath(folderPath);
-  if (!(root instanceof import_obsidian10.TFolder)) {
-    new import_obsidian10.Notice("Folder not found: " + folderPath);
+  if (!(root instanceof import_obsidian11.TFolder)) {
+    new import_obsidian11.Notice("Folder not found: " + folderPath);
     return { created: 0, skipped: 0, errors: 0, filesProcessed: 0 };
   }
   const IMPORTABLE_EXTS = /* @__PURE__ */ new Set(["xml", "csv", "gnmap", "json", "jsonl", "nmap", "txt"]);
   const allFiles = collectFiles(root).filter((f) => IMPORTABLE_EXTS.has(f.extension.toLowerCase()));
   if (allFiles.length === 0) {
-    new import_obsidian10.Notice("No importable scan files found in " + folderPath);
+    new import_obsidian11.Notice("No importable scan files found in " + folderPath);
     return { created: 0, skipped: 0, errors: 0, filesProcessed: 0 };
   }
   let created = 0;
@@ -2204,9 +2305,9 @@ async function importFolderRecursive(app, folderPath) {
   let filesProcessed = 0;
   const MAX_SIZE = 10 * 1024 * 1024;
   for (const file of allFiles) {
-    new import_obsidian10.Notice("Importing " + file.path + "...");
+    new import_obsidian11.Notice("Importing " + file.path + "...");
     if (file.stat.size > MAX_SIZE) {
-      new import_obsidian10.Notice("File too large (>10 MB), skipped: " + file.path);
+      new import_obsidian11.Notice("File too large (>10 MB), skipped: " + file.path);
       errors += 1;
       filesProcessed += 1;
       continue;
@@ -2253,6 +2354,9 @@ async function importFolderRecursive(app, folderPath) {
         case "whatweb-json":
           result = await importWhatwebJson(app, content, true);
           break;
+        case "iseeu-custom":
+          result = await importIseeUCustom(app, content, true);
+          break;
       }
       created += result.created;
       skipped += result.skipped;
@@ -2260,17 +2364,17 @@ async function importFolderRecursive(app, folderPath) {
     } catch (e) {
       errors += 1;
       filesProcessed += 1;
-      new import_obsidian10.Notice("Error importing " + file.path + ": " + String(e));
+      new import_obsidian11.Notice("Error importing " + file.path + ": " + String(e));
     }
   }
-  new import_obsidian10.Notice(
+  new import_obsidian11.Notice(
     `Recursive import complete: ${created} created, ${skipped} skipped, ${errors} errors across ${filesProcessed} files`
   );
   return { created, skipped, errors, filesProcessed };
 }
 
 // templates.ts
-var import_obsidian11 = require("obsidian");
+var import_obsidian12 = require("obsidian");
 var HOST_TEMPLATE = `---
 type: host
 ip: 
@@ -2364,17 +2468,17 @@ async function createNoteFromTemplate(app, type) {
   }
   const newFile = await app.vault.create(path, content);
   const leaf = app.workspace.getLeaf(false);
-  if (leaf && newFile instanceof import_obsidian11.TFile) {
+  if (leaf && newFile instanceof import_obsidian12.TFile) {
     await leaf.openFile(newFile);
   }
 }
 
 // settings.ts
-var import_obsidian12 = require("obsidian");
+var import_obsidian13 = require("obsidian");
 var DEFAULT_SETTINGS = {
   watchedFolder: "iSeeU/imports/"
 };
-var ISeeUSettingTab = class extends import_obsidian12.PluginSettingTab {
+var ISeeUSettingTab = class extends import_obsidian13.PluginSettingTab {
   // typed as any to avoid circular import with main.ts
   constructor(app, plugin) {
     super(app, plugin);
@@ -2383,7 +2487,7 @@ var ISeeUSettingTab = class extends import_obsidian12.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    new import_obsidian12.Setting(containerEl).setName("Watched Folder").setDesc("Vault folder to watch for incoming scan files (XML, CSV, GNMAP). Files dropped here are auto-imported.").addText((text) => text.setPlaceholder("iSeeU/imports/").setValue(this.plugin.settings.watchedFolder).onChange(async (value) => {
+    new import_obsidian13.Setting(containerEl).setName("Watched Folder").setDesc("Vault folder to watch for incoming scan files (XML, CSV, GNMAP). Files dropped here are auto-imported.").addText((text) => text.setPlaceholder("iSeeU/imports/").setValue(this.plugin.settings.watchedFolder).onChange(async (value) => {
       this.plugin.settings.watchedFolder = value;
       await this.plugin.saveSettings();
     }));
@@ -2391,14 +2495,14 @@ var ISeeUSettingTab = class extends import_obsidian12.PluginSettingTab {
 };
 
 // main.ts
-var FolderSuggestModal = class extends import_obsidian13.FuzzySuggestModal {
+var FolderSuggestModal = class extends import_obsidian14.FuzzySuggestModal {
   constructor(app, onChoose) {
     super(app);
     this.onChoose = onChoose;
     this.setPlaceholder("Type to filter folders...");
   }
   getItems() {
-    return this.app.vault.getAllLoadedFiles().filter((f) => f instanceof import_obsidian13.TFolder);
+    return this.app.vault.getAllLoadedFiles().filter((f) => f instanceof import_obsidian14.TFolder);
   }
   getItemText(folder) {
     return folder.path;
@@ -2407,7 +2511,7 @@ var FolderSuggestModal = class extends import_obsidian13.FuzzySuggestModal {
     this.onChoose(folder);
   }
 };
-var ISeeUPlugin = class extends import_obsidian13.Plugin {
+var ISeeUPlugin = class extends import_obsidian14.Plugin {
   async onload() {
     await this.loadSettings();
     this.registerView(VIEW_TYPE, (leaf) => new ISeeUView(leaf));
@@ -2479,7 +2583,7 @@ var ISeeUPlugin = class extends import_obsidian13.Plugin {
               totalErrors += 1;
             }
           }
-          new import_obsidian13.Notice(
+          new import_obsidian14.Notice(
             `Import complete: ${totalCreated} created, ${totalSkipped} skipped${totalErrors ? `, ${totalErrors} errors` : ""}`
           );
         };
@@ -2508,7 +2612,7 @@ var ISeeUPlugin = class extends import_obsidian13.Plugin {
     );
     this.registerEvent(
       this.app.vault.on("create", async (abstractFile) => {
-        if (!(abstractFile instanceof import_obsidian13.TFile))
+        if (!(abstractFile instanceof import_obsidian14.TFile))
           return;
         if (!this.settings.watchedFolder.trim())
           return;
@@ -2520,7 +2624,7 @@ var ISeeUPlugin = class extends import_obsidian13.Plugin {
           return;
         const MAX_BYTES = 10 * 1024 * 1024;
         if (abstractFile.stat && abstractFile.stat.size > MAX_BYTES) {
-          new import_obsidian13.Notice(`Auto-import skipped: file exceeds 10 MB limit`);
+          new import_obsidian14.Notice(`Auto-import skipped: file exceeds 10 MB limit`);
           return;
         }
         let content = "";
@@ -2544,9 +2648,9 @@ var ISeeUPlugin = class extends import_obsidian13.Plugin {
           if (!detected)
             return;
           const result = await this.routeToImporter(detected, content);
-          new import_obsidian13.Notice(`Auto-import complete: ${result.created} created, ${result.skipped} skipped`);
+          new import_obsidian14.Notice(`Auto-import complete: ${result.created} created, ${result.skipped} skipped`);
         } catch (e) {
-          new import_obsidian13.Notice(`Auto-import failed: ${e.message}`);
+          new import_obsidian14.Notice(`Auto-import failed: ${e.message}`);
         }
       })
     );
@@ -2601,6 +2705,8 @@ var ISeeUPlugin = class extends import_obsidian13.Plugin {
         return importNucleiJsonl(this.app, content, true);
       case "whatweb-json":
         return importWhatwebJson(this.app, content, true);
+      case "iseeu-custom":
+        return importIseeUCustom(this.app, content, true);
     }
   }
   async loadSettings() {
