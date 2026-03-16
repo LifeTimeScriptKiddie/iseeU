@@ -625,6 +625,62 @@ function scanVault(app) {
 
 // viewer.ts
 var SEVERITY_ORDER = ["critical", "high", "medium", "low", "info"];
+var SEVERITY_COLORS = {
+  critical: "#d63031",
+  high: "#e17055",
+  medium: "#fdcb6e",
+  low: "#0984e3",
+  info: "#636e72"
+};
+function parseIPv4(ip) {
+  if (!/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(ip))
+    return null;
+  const parts = ip.split(".").map(Number);
+  if (parts.some((p) => p < 0 || p > 255))
+    return null;
+  return parts;
+}
+function highestSeverity(severities) {
+  if (severities.length === 0)
+    return null;
+  return severities.reduce(
+    (best, s) => SEVERITY_ORDER.indexOf(s) < SEVERITY_ORDER.indexOf(best) ? s : best
+  );
+}
+function portCountToOpacity(portCount, maxPortCount) {
+  if (maxPortCount === 0)
+    return 0.25;
+  return 0.25 + 0.75 * (portCount / maxPortCount);
+}
+function buildHeatmapData(data) {
+  var _a, _b, _c, _d;
+  const result = /* @__PURE__ */ new Map();
+  const allIPs = /* @__PURE__ */ new Set([
+    ...data.hosts.map((h) => h.ip),
+    ...data.services.map((s) => s.ip),
+    ...data.vulns.map((v) => v.ip)
+  ]);
+  for (const ip of allIPs) {
+    const octets = parseIPv4(ip);
+    if (!octets)
+      continue;
+    const [a, b, c, d] = octets;
+    const prefix = `${a}.${b}`;
+    if (!result.has(prefix))
+      result.set(prefix, /* @__PURE__ */ new Map());
+    const byThird = result.get(prefix);
+    if (!byThird.has(c))
+      byThird.set(c, /* @__PURE__ */ new Map());
+    const byFourth = byThird.get(c);
+    const ports = [...new Set(data.services.filter((s) => s.ip === ip).map((s) => s.port))];
+    const sevs = data.vulns.filter((v) => v.ip === ip).map((v) => v.severity);
+    const severity = highestSeverity(sevs);
+    const hostFile = (_b = (_a = data.hosts.find((h) => h.ip === ip)) == null ? void 0 : _a.file) != null ? _b : null;
+    const vulnFile = (_d = (_c = data.vulns.find((v) => v.ip === ip)) == null ? void 0 : _c.file) != null ? _d : null;
+    byFourth.set(d, { ip, ports, severity, hostFile, vulnFile });
+  }
+  return result;
+}
 var ISeeUView = class extends import_obsidian.ItemView {
   constructor(leaf) {
     super(leaf);
@@ -632,6 +688,7 @@ var ISeeUView = class extends import_obsidian.ItemView {
     this.tabButtons = [];
     this.filterFrom = "";
     this.filterTo = "";
+    this.heatmapDrilldown = null;
     this.searchQuery = "";
   }
   getViewType() {
@@ -658,7 +715,8 @@ var ISeeUView = class extends import_obsidian.ItemView {
       { id: "ip", label: "IP" },
       { id: "port", label: "Port" },
       { id: "timeline", label: "Timeline" },
-      { id: "vuln", label: "Vulnerability" }
+      { id: "vuln", label: "Vulnerability" },
+      { id: "heatmap", label: "Heatmap" }
     ];
     this.tabButtons = [];
     tabs.forEach((tab) => {
@@ -698,6 +756,9 @@ var ISeeUView = class extends import_obsidian.ItemView {
         break;
       case "vuln":
         this.renderVulnView(data);
+        break;
+      case "heatmap":
+        this.renderHeatmapView(data);
         break;
     }
   }
@@ -760,7 +821,7 @@ var ISeeUView = class extends import_obsidian.ItemView {
     }
   }
   renderPortView(data) {
-    if (data.hosts.length === 0 && data.vulns.length === 0) {
+    if (data.hosts.length === 0 && data.services.length === 0 && data.vulns.length === 0 && data.credentials.length === 0) {
       this.renderEmptyState();
       return;
     }
@@ -811,7 +872,7 @@ var ISeeUView = class extends import_obsidian.ItemView {
     }
   }
   renderTimelineView(data) {
-    if (data.hosts.length === 0 && data.vulns.length === 0) {
+    if (data.hosts.length === 0 && data.services.length === 0 && data.vulns.length === 0 && data.credentials.length === 0) {
       this.renderEmptyState();
       return;
     }
@@ -853,7 +914,7 @@ var ISeeUView = class extends import_obsidian.ItemView {
     if (this.filterFrom)
       entries = entries.filter((e) => e.found >= this.filterFrom);
     if (this.filterTo)
-      entries = entries.filter((e) => e.found <= this.filterTo + "T23:59");
+      entries = entries.filter((e) => e.found <= this.filterTo + " 23:59");
     if (entries.length === 0) {
       this.contentContainer.createEl("p", {
         text: "No entries match the selected date range.",
@@ -902,7 +963,7 @@ var ISeeUView = class extends import_obsidian.ItemView {
     }
   }
   renderVulnView(data) {
-    if (data.hosts.length === 0 && data.vulns.length === 0) {
+    if (data.hosts.length === 0 && data.services.length === 0 && data.vulns.length === 0 && data.credentials.length === 0) {
       this.renderEmptyState();
       return;
     }
@@ -952,6 +1013,115 @@ var ISeeUView = class extends import_obsidian.ItemView {
     if (renderedCount === 0 && query) {
       table.remove();
       this.contentContainer.createDiv({ cls: "iu-empty-state", text: "No results match your search." });
+    }
+  }
+  renderHeatmapView(data) {
+    var _a;
+    if (data.hosts.length === 0 && data.services.length === 0 && data.vulns.length === 0 && data.credentials.length === 0) {
+      this.renderEmptyState();
+      return;
+    }
+    const heatmapData = buildHeatmapData(data);
+    const breadcrumb = this.contentContainer.createEl("div", { cls: "iu-heatmap-breadcrumb" });
+    if (this.heatmapDrilldown !== null) {
+      const back = breadcrumb.createEl("span", { cls: "iu-heatmap-back" });
+      back.setText(`\u25C0 All subnets > ${this.heatmapDrilldown}.x`);
+      back.addEventListener("click", () => {
+        this.heatmapDrilldown = null;
+        this.refresh();
+      });
+    } else {
+      breadcrumb.setText("IP Heatmap");
+    }
+    if (heatmapData.size === 0) {
+      this.contentContainer.createEl("p", { text: "No valid IPv4 addresses found in vault.", cls: "iu-empty-hint" });
+      return;
+    }
+    if (this.heatmapDrilldown !== null) {
+      const parts = this.heatmapDrilldown.split(".");
+      const prefix16 = `${parts[0]}.${parts[1]}`;
+      const thirdOctet = parseInt(parts[2], 10);
+      const byThird = heatmapData.get(prefix16);
+      const byFourth = (_a = byThird == null ? void 0 : byThird.get(thirdOctet)) != null ? _a : /* @__PURE__ */ new Map();
+      let maxPorts = 0;
+      for (const cell of byFourth.values()) {
+        if (cell.ports.length > maxPorts)
+          maxPorts = cell.ports.length;
+      }
+      const grid = this.contentContainer.createEl("div", { cls: "iu-heatmap-grid" });
+      for (let i = 0; i < 256; i++) {
+        const cell = grid.createEl("div", { cls: "iu-heatmap-cell" });
+        const label = cell.createEl("span", { cls: "iu-heatmap-cell-label" });
+        label.setText(String(i).padStart(3, "0"));
+        const hostData = byFourth.get(i);
+        if (hostData) {
+          cell.addClass("iu-heatmap-cell--data");
+          if (hostData.severity) {
+            cell.style.backgroundColor = SEVERITY_COLORS[hostData.severity];
+          }
+          cell.style.opacity = String(portCountToOpacity(hostData.ports.length, maxPorts));
+          const first10 = hostData.ports.slice(0, 10);
+          const portsStr = first10.join(", ") + (hostData.ports.length > 10 ? ` ... +${hostData.ports.length - 10} more` : "");
+          const sevStr = hostData.severity ? hostData.severity.toUpperCase() : "NONE";
+          cell.title = `${hostData.ip} | Ports: ${portsStr} | Severity: ${sevStr}`;
+          cell.addEventListener("click", () => {
+            var _a2;
+            const file = (_a2 = hostData.hostFile) != null ? _a2 : hostData.vulnFile;
+            if (file)
+              this.app.workspace.getLeaf(false).openFile(file);
+          });
+        } else {
+          cell.addClass("iu-heatmap-cell--empty");
+        }
+      }
+    } else {
+      const prefixes = [...heatmapData.keys()].sort();
+      for (const prefix of prefixes) {
+        const byThird = heatmapData.get(prefix);
+        this.contentContainer.createEl("div", { text: `${prefix}.x.x`, cls: "iu-heatmap-section-label" });
+        let maxPorts = 0;
+        for (const byFourth of byThird.values()) {
+          for (const cell of byFourth.values()) {
+            if (cell.ports.length > maxPorts)
+              maxPorts = cell.ports.length;
+          }
+        }
+        const grid = this.contentContainer.createEl("div", { cls: "iu-heatmap-grid" });
+        for (let i = 0; i < 256; i++) {
+          const cellEl = grid.createEl("div", { cls: "iu-heatmap-cell" });
+          const label = cellEl.createEl("span", { cls: "iu-heatmap-cell-label" });
+          label.setText(String(i).padStart(3, "0"));
+          const byFourth = byThird.get(i);
+          if (byFourth && byFourth.size > 0) {
+            cellEl.addClass("iu-heatmap-cell--data");
+            const allSevs = [];
+            let maxPortsInSubnet = 0;
+            let hostCount = 0;
+            let serviceCount = 0;
+            for (const cell of byFourth.values()) {
+              hostCount++;
+              if (cell.severity)
+                allSevs.push(cell.severity);
+              serviceCount += cell.ports.length;
+              if (cell.ports.length > maxPortsInSubnet)
+                maxPortsInSubnet = cell.ports.length;
+            }
+            const topSev = highestSeverity(allSevs);
+            if (topSev) {
+              cellEl.style.backgroundColor = SEVERITY_COLORS[topSev];
+            }
+            cellEl.style.opacity = String(portCountToOpacity(maxPortsInSubnet, maxPorts));
+            const sevStr = topSev ? topSev.toUpperCase() : "NONE";
+            cellEl.title = `${prefix}.${i}.x \u2014 ${hostCount} hosts, ${serviceCount} services, highest: ${sevStr}`;
+            cellEl.addEventListener("click", () => {
+              this.heatmapDrilldown = `${prefix}.${i}`;
+              this.refresh();
+            });
+          } else {
+            cellEl.addClass("iu-heatmap-cell--empty");
+          }
+        }
+      }
     }
   }
 };

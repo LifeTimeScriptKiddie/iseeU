@@ -253,3 +253,79 @@
 .iu-search-bar .search-input-container {
   width: 100%;
 }
+
+/* ── Heatmap tab ── */
+.iu-heatmap-breadcrumb {
+  padding: 6px 8px;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-bottom: 8px;
+}
+
+.iu-heatmap-breadcrumb .iu-heatmap-back {
+  cursor: pointer;
+  color: var(--interactive-accent);
+  font-weight: 600;
+}
+
+.iu-heatmap-breadcrumb .iu-heatmap-back:hover {
+  text-decoration: underline;
+}
+
+.iu-heatmap-section-label {
+  padding: 8px 4px 4px;
+  font-weight: 700;
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--background-modifier-border);
+  margin-top: 12px;
+  margin-bottom: 6px;
+}
+
+.iu-heatmap-grid {
+  display: grid;
+  grid-template-columns: repeat(16, 1fr);
+  gap: 2px;
+  margin-bottom: 16px;
+}
+
+.iu-heatmap-cell {
+  aspect-ratio: 1;
+  background: var(--background-secondary);
+  border-radius: 2px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  opacity: 0.15;
+  transition: outline 0.05s;
+}
+
+.iu-heatmap-cell.iu-heatmap-cell--data {
+  opacity: 1; /* overridden by inline style for exact opacity */
+  cursor: pointer;
+}
+
+.iu-heatmap-cell.iu-heatmap-cell--empty {
+  cursor: default;
+  opacity: 0.15;
+}
+
+.iu-heatmap-cell:hover {
+  outline: 2px solid var(--interactive-accent);
+  z-index: 1;
+  position: relative;
+}
+
+.iu-heatmap-cell-label {
+  font-family: var(--font-monospace);
+  font-size: 8px;
+  color: rgba(255, 255, 255, 0.75);
+  pointer-events: none;
+  overflow: hidden;
+  text-overflow: clip;
+  white-space: nowrap;
+  line-height: 1;
+}
