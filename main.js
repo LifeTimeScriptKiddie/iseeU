@@ -510,7 +510,7 @@ __export(main_exports, {
   default: () => ISeeUPlugin
 });
 module.exports = __toCommonJS(main_exports);
-var import_obsidian14 = require("obsidian");
+var import_obsidian16 = require("obsidian");
 
 // types.ts
 var VIEW_TYPE = "iseeu";
@@ -2518,8 +2518,143 @@ ${record.banner}
   return { created, skipped };
 }
 
-// importers/detect.ts
+// importers/ffuf.ts
 var import_obsidian11 = require("obsidian");
+async function importFfufJson(app, content, silent = false) {
+  if (!content.trim())
+    return { created: 0, skipped: 0 };
+  let parsed;
+  try {
+    parsed = JSON.parse(content);
+  } catch (e) {
+    return { created: 0, skipped: 0 };
+  }
+  if (!Array.isArray(parsed.results))
+    return { created: 0, skipped: 0 };
+  const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 16).replace("T", " ");
+  let created = 0;
+  let skipped = 0;
+  for (const result of parsed.results) {
+    if (result.status !== 200)
+      continue;
+    let pathname;
+    try {
+      pathname = new URL(result.url).pathname;
+    } catch (e) {
+      continue;
+    }
+    if (pathname !== "/")
+      continue;
+    const ip = result.host || result.url.replace(/^https?:\/\//, "").split("/")[0].split(":")[0];
+    if (!ip)
+      continue;
+    let port = 80;
+    if (result.url.startsWith("https://"))
+      port = 443;
+    const portMatch = result.url.match(/:(\d+)(\/|$)/);
+    if (portMatch)
+      port = parseInt(portMatch[1], 10);
+    const servicePath = buildServicePath(ip, port, "tcp");
+    await ensureFolderHierarchy(app.vault, ip);
+    if (app.vault.getAbstractFileByPath(servicePath) == null) {
+      const contentType = result["content-type"] || "N/A";
+      const noteContent = buildFrontmatter({
+        type: "service",
+        ip,
+        port,
+        protocol: "tcp",
+        status: "open",
+        found: now
+      }) + `# ffuf: ${result.url}
+
+## Web Root Response
+
+Status: ${result.status}
+Content-Type: ${contentType}
+Size: ${result.length} bytes
+
+## Notes
+
+`;
+      await app.vault.create(servicePath, noteContent);
+      created += 1;
+    } else {
+      skipped += 1;
+    }
+    if (canUpsertHostSummary(app)) {
+      await upsertHostSummary(app, ip, { status: "active" }, [noteBasename(servicePath)], [], []);
+    }
+  }
+  if (!silent)
+    new import_obsidian11.Notice(`ffuf import complete: ${created} created, ${skipped} skipped`);
+  return { created, skipped };
+}
+
+// importers/dirsearch.ts
+var import_obsidian12 = require("obsidian");
+async function importDirsearchJson(app, content, silent = false) {
+  if (!content.trim())
+    return { created: 0, skipped: 0 };
+  let entries;
+  try {
+    const parsed = JSON.parse(content);
+    if (!Array.isArray(parsed))
+      return { created: 0, skipped: 0 };
+    entries = parsed;
+  } catch (e) {
+    return { created: 0, skipped: 0 };
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString().slice(0, 16).replace("T", " ");
+  let created = 0;
+  let skipped = 0;
+  for (const entry of entries) {
+    if (entry.path !== "/" || entry.status !== 200)
+      continue;
+    const ip = entry.url.replace(/^https?:\/\//, "").split("/")[0].split(":")[0];
+    if (!ip)
+      continue;
+    let port = 80;
+    if (entry.url.startsWith("https://"))
+      port = 443;
+    const portMatch = entry.url.match(/:(\d+)(\/|$)/);
+    if (portMatch)
+      port = parseInt(portMatch[1], 10);
+    const servicePath = buildServicePath(ip, port, "tcp");
+    await ensureFolderHierarchy(app.vault, ip);
+    if (app.vault.getAbstractFileByPath(servicePath) == null) {
+      const noteContent = buildFrontmatter({
+        type: "service",
+        ip,
+        port,
+        protocol: "tcp",
+        status: "open",
+        found: now
+      }) + `# dirsearch: ${entry.url}
+
+## Web Root Response
+
+Status: ${entry.status}
+Type: ${entry.type || "N/A"}
+
+## Notes
+
+`;
+      await app.vault.create(servicePath, noteContent);
+      created += 1;
+    } else {
+      skipped += 1;
+    }
+    if (canUpsertHostSummary(app)) {
+      await upsertHostSummary(app, ip, { status: "active" }, [noteBasename(servicePath)], [], []);
+    }
+  }
+  if (!silent)
+    new import_obsidian12.Notice(`dirsearch import complete: ${created} created, ${skipped} skipped`);
+  return { created, skipped };
+}
+
+// importers/detect.ts
+var import_obsidian13 = require("obsidian");
 function detectFormat(content, filename) {
   var _a, _b;
   const ext = (_b = (_a = filename.split(".").pop()) == null ? void 0 : _a.toLowerCase()) != null ? _b : "";
@@ -2536,6 +2671,12 @@ function detectFormat(content, filename) {
       return { type: "nuclei-jsonl" };
     if (sniff.includes('"plugins"') && (sniff.includes('"target"') || sniff.includes('"http_status"'))) {
       return { type: "whatweb-json" };
+    }
+    if (!sniff.trim().startsWith("[") && sniff.includes('"commandline"') && sniff.includes('"results"')) {
+      return { type: "ffuf-json" };
+    }
+    if (sniff.trim().startsWith("[") && sniff.includes('"path"') && sniff.includes('"status"') && sniff.includes('"url"') && !sniff.includes('"ip"')) {
+      return { type: "dirsearch-json" };
     }
     if (sniff.startsWith("{,") || sniff.includes('"scanner":"masscan"') || sniff.includes('"scanner": "masscan"')) {
       return { type: "masscan-json" };
@@ -2584,22 +2725,22 @@ async function importFolderRecursive(app, folderPath) {
   function collectFiles(folder) {
     const files = [];
     for (const child of folder.children) {
-      if (child instanceof import_obsidian11.TFile)
+      if (child instanceof import_obsidian13.TFile)
         files.push(child);
-      else if (child instanceof import_obsidian11.TFolder)
+      else if (child instanceof import_obsidian13.TFolder)
         files.push(...collectFiles(child));
     }
     return files;
   }
   const root = app.vault.getAbstractFileByPath(folderPath);
-  if (!(root instanceof import_obsidian11.TFolder)) {
-    new import_obsidian11.Notice("Folder not found: " + folderPath);
+  if (!(root instanceof import_obsidian13.TFolder)) {
+    new import_obsidian13.Notice("Folder not found: " + folderPath);
     return { created: 0, skipped: 0, errors: 0, filesProcessed: 0 };
   }
   const IMPORTABLE_EXTS = /* @__PURE__ */ new Set(["xml", "csv", "gnmap", "json", "jsonl", "nmap", "txt"]);
   const allFiles = collectFiles(root).filter((f) => IMPORTABLE_EXTS.has(f.extension.toLowerCase()));
   if (allFiles.length === 0) {
-    new import_obsidian11.Notice("No importable scan files found in " + folderPath);
+    new import_obsidian13.Notice("No importable scan files found in " + folderPath);
     return { created: 0, skipped: 0, errors: 0, filesProcessed: 0 };
   }
   let created = 0;
@@ -2608,9 +2749,9 @@ async function importFolderRecursive(app, folderPath) {
   let filesProcessed = 0;
   const MAX_SIZE = 10 * 1024 * 1024;
   for (const file of allFiles) {
-    new import_obsidian11.Notice("Importing " + file.path + "...");
+    new import_obsidian13.Notice("Importing " + file.path + "...");
     if (file.stat.size > MAX_SIZE) {
-      new import_obsidian11.Notice("File too large (>10 MB), skipped: " + file.path);
+      new import_obsidian13.Notice("File too large (>10 MB), skipped: " + file.path);
       errors += 1;
       filesProcessed += 1;
       continue;
@@ -2660,6 +2801,12 @@ async function importFolderRecursive(app, folderPath) {
         case "iseeu-custom":
           result = await importIseeUCustom(app, content, true);
           break;
+        case "ffuf-json":
+          result = await importFfufJson(app, content, true);
+          break;
+        case "dirsearch-json":
+          result = await importDirsearchJson(app, content, true);
+          break;
       }
       created += result.created;
       skipped += result.skipped;
@@ -2667,17 +2814,17 @@ async function importFolderRecursive(app, folderPath) {
     } catch (e) {
       errors += 1;
       filesProcessed += 1;
-      new import_obsidian11.Notice("Error importing " + file.path + ": " + String(e));
+      new import_obsidian13.Notice("Error importing " + file.path + ": " + String(e));
     }
   }
-  new import_obsidian11.Notice(
+  new import_obsidian13.Notice(
     `Recursive import complete: ${created} created, ${skipped} skipped, ${errors} errors across ${filesProcessed} files`
   );
   return { created, skipped, errors, filesProcessed };
 }
 
 // templates.ts
-var import_obsidian12 = require("obsidian");
+var import_obsidian14 = require("obsidian");
 var HOST_TEMPLATE = `---
 type: host
 ip: 
@@ -2771,17 +2918,17 @@ async function createNoteFromTemplate(app, type) {
   }
   const newFile = await app.vault.create(path, content);
   const leaf = app.workspace.getLeaf(false);
-  if (leaf && newFile instanceof import_obsidian12.TFile) {
+  if (leaf && newFile instanceof import_obsidian14.TFile) {
     await leaf.openFile(newFile);
   }
 }
 
 // settings.ts
-var import_obsidian13 = require("obsidian");
+var import_obsidian15 = require("obsidian");
 var DEFAULT_SETTINGS = {
   watchedFolder: "iSeeU/imports/"
 };
-var ISeeUSettingTab = class extends import_obsidian13.PluginSettingTab {
+var ISeeUSettingTab = class extends import_obsidian15.PluginSettingTab {
   // typed as any to avoid circular import with main.ts
   constructor(app, plugin) {
     super(app, plugin);
@@ -2790,7 +2937,7 @@ var ISeeUSettingTab = class extends import_obsidian13.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    new import_obsidian13.Setting(containerEl).setName("Watched Folder").setDesc("Vault folder to watch for incoming scan files (XML, CSV, GNMAP). Files dropped here are auto-imported.").addText((text) => text.setPlaceholder("iSeeU/imports/").setValue(this.plugin.settings.watchedFolder).onChange(async (value) => {
+    new import_obsidian15.Setting(containerEl).setName("Watched Folder").setDesc("Vault folder to watch for incoming scan files (XML, CSV, GNMAP). Files dropped here are auto-imported.").addText((text) => text.setPlaceholder("iSeeU/imports/").setValue(this.plugin.settings.watchedFolder).onChange(async (value) => {
       this.plugin.settings.watchedFolder = value;
       await this.plugin.saveSettings();
     }));
@@ -2798,14 +2945,14 @@ var ISeeUSettingTab = class extends import_obsidian13.PluginSettingTab {
 };
 
 // main.ts
-var FolderSuggestModal = class extends import_obsidian14.FuzzySuggestModal {
+var FolderSuggestModal = class extends import_obsidian16.FuzzySuggestModal {
   constructor(app, onChoose) {
     super(app);
     this.onChoose = onChoose;
     this.setPlaceholder("Type to filter folders...");
   }
   getItems() {
-    return this.app.vault.getAllLoadedFiles().filter((f) => f instanceof import_obsidian14.TFolder);
+    return this.app.vault.getAllLoadedFiles().filter((f) => f instanceof import_obsidian16.TFolder);
   }
   getItemText(folder) {
     return folder.path;
@@ -2814,7 +2961,7 @@ var FolderSuggestModal = class extends import_obsidian14.FuzzySuggestModal {
     this.onChoose(folder);
   }
 };
-var ISeeUPlugin = class extends import_obsidian14.Plugin {
+var ISeeUPlugin = class extends import_obsidian16.Plugin {
   async onload() {
     await this.loadSettings();
     this.registerView(VIEW_TYPE, (leaf) => new ISeeUView(leaf));
@@ -2886,7 +3033,7 @@ var ISeeUPlugin = class extends import_obsidian14.Plugin {
               totalErrors += 1;
             }
           }
-          new import_obsidian14.Notice(
+          new import_obsidian16.Notice(
             `Import complete: ${totalCreated} created, ${totalSkipped} skipped${totalErrors ? `, ${totalErrors} errors` : ""}`
           );
         };
@@ -2915,7 +3062,7 @@ var ISeeUPlugin = class extends import_obsidian14.Plugin {
     );
     this.registerEvent(
       this.app.vault.on("create", async (abstractFile) => {
-        if (!(abstractFile instanceof import_obsidian14.TFile))
+        if (!(abstractFile instanceof import_obsidian16.TFile))
           return;
         if (!this.settings.watchedFolder.trim())
           return;
@@ -2927,7 +3074,7 @@ var ISeeUPlugin = class extends import_obsidian14.Plugin {
           return;
         const MAX_BYTES = 10 * 1024 * 1024;
         if (abstractFile.stat && abstractFile.stat.size > MAX_BYTES) {
-          new import_obsidian14.Notice(`Auto-import skipped: file exceeds 10 MB limit`);
+          new import_obsidian16.Notice(`Auto-import skipped: file exceeds 10 MB limit`);
           return;
         }
         let content = "";
@@ -2951,9 +3098,9 @@ var ISeeUPlugin = class extends import_obsidian14.Plugin {
           if (!detected)
             return;
           const result = await this.routeToImporter(detected, content);
-          new import_obsidian14.Notice(`Auto-import complete: ${result.created} created, ${result.skipped} skipped`);
+          new import_obsidian16.Notice(`Auto-import complete: ${result.created} created, ${result.skipped} skipped`);
         } catch (e) {
-          new import_obsidian14.Notice(`Auto-import failed: ${e.message}`);
+          new import_obsidian16.Notice(`Auto-import failed: ${e.message}`);
         }
       })
     );
@@ -3010,6 +3157,10 @@ var ISeeUPlugin = class extends import_obsidian14.Plugin {
         return importWhatwebJson(this.app, content, true);
       case "iseeu-custom":
         return importIseeUCustom(this.app, content, true);
+      case "ffuf-json":
+        return importFfufJson(this.app, content, true);
+      case "dirsearch-json":
+        return importDirsearchJson(this.app, content, true);
     }
   }
   async loadSettings() {
