@@ -1,7 +1,7 @@
 {
   "id": "iseeu",
   "name": "iSeeU",
-  "version": "3.2.0",
+  "version": "3.3.0",
   "minAppVersion": "1.0.0",
   "description": "iSeeU — import and visualise pentest tool outputs in Obsidian",
   "author": "",

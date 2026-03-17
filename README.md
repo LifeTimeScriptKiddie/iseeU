@@ -1,16 +1,38 @@
 # iSeeU
 
-![Version](https://img.shields.io/badge/version-3.1.0-blue)
+![Version](https://img.shields.io/badge/version-3.3.0-blue)
 ![Obsidian](https://img.shields.io/badge/Obsidian-1.0+-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
 iSeeU is an Obsidian plugin designed to help security professionals manage penetration testing notes and scan results. It parses YAML frontmatter from specific note types and provides an organized dashboard to visualize your engagement data.
 
+## Scanner Quick Reference
+
+Run these commands and drop the output files into iSeeU via **Import scan files...** or the **Watched Folder**. Format is auto-detected — no manual selection needed.
+
+| Tool | Command | Output Flag | File | Notes |
+|---|---|---|---|---|
+| **Nmap** | `nmap -sV -sC <target>` | `-oX scan.xml` | `.xml` | Recommended — richest data (hosts + services + NSE scripts) |
+| **Nmap** | `nmap -sV -sC <target>` | `-oA scan` | `.xml` + `.gnmap` + `.nmap` | All three formats at once; import any of the three |
+| **Nmap** | `nmap -sV -sC <target>` | `-oG scan.gnmap` | `.gnmap` | Open ports only |
+| **Nmap** | `nmap -sV -sC <target>` | `-oN scan.nmap` | `.nmap` / `.txt` | Open ports + NSE output |
+| **Masscan** | `masscan <cidr> -p1-65535 --rate=1000` | `-oX scan.xml` | `.xml` | Fast port sweep |
+| **Masscan** | `masscan <cidr> -p1-65535 --rate=1000` | `-oJ scan.json` | `.json` | JSON alternative |
+| **Nessus** | Export from Nessus UI | CSV export | `.csv` | Vulnerability findings with CVSS |
+| **Burp Suite** | Scanner → Issues → Export XML | — | `.xml` | Web vulnerability findings |
+| **OpenVAS** | GSM → Export Report XML | — | `.xml` | Vulnerability findings with CVSS |
+| **Nuclei** | `nuclei -u http://<target> -jsonl` | `-o scan.jsonl` | `.jsonl` | Vulnerability findings from templates |
+| **WhatWeb** | `whatweb -a3 http://<target>` | `--log-json=scan.json` | `.json` | Technology fingerprinting → service notes |
+| **Nikto** | `nikto -h http://<target>` | `-o scan.txt` | `.txt` | Web findings → vuln notes (info severity) |
+| **iSeeU Custom** | `bash iseeu-scan.sh <target> 22,80,443` | *(built-in)* | `.json` | nc + curl scanner, see custom scanner section |
+| **dirsearch** | `dirsearch -u http://<target>` | `-o out.json --format=json` | `.json` | ⚠️ Not imported — manual review only |
+| **ffuf** | `ffuf -u http://<target>/FUZZ -w list.txt` | `-o out.json -of json` | `.json` | ⚠️ Not imported — manual review only |
+
 ## Features
 
 - **Note Management**: Specialized templates for hosts, services, vulnerabilities, and credentials.
 - **Automated Imports**: Import results from 11 scanner formats directly into your vault.
-- **Unified Dashboard**: View your data through four distinct lenses: IP, Port, Timeline, and Vulnerability.
+- **Unified Dashboard**: View your data through five distinct lenses: IP, Port, Timeline, Vulnerability, and Heatmap.
 - **Real-time Updates**: The dashboard automatically refreshes when you modify note frontmatter.
 - **Zero Dependencies**: Works standalone without requiring Dataview or other external plugins.
 - **Nmap Import**: Supports all three Nmap output formats: XML (`-oX`), Grepable (`-oG`), and Normal Text (`-oN`).
@@ -86,12 +108,152 @@ Vulnerability severity must be one of: `critical`, `high`, `medium`, `low`, or `
 
 ## Dashboard Views
 
-The dashboard features four tabs to help you navigate your data:
+The dashboard features five tabs to help you navigate your data:
 
 - **IP View**: Groups all services, vulnerabilities, and credentials by their host IP address.
 - **Port View**: Lists all discovered ports and the services running on them.
 - **Timeline View**: Displays vulnerabilities and credentials chronologically based on the `found` field.
 - **Vuln View**: Aggregates all vulnerabilities, grouped by severity level.
+- **Heatmap View**: Visualizes all IP addresses as a color-coded spatial grid, with 4-level drilldown from /8 blocks down to individual IPs.
+
+## How to Use
+
+This section explains how to use each of the five dashboard tabs and what note structure each tab expects.
+
+### IP Tab
+
+The IP tab shows all host notes as rows. Each row displays IP address, hostname, OS, status, and counts of associated services, vulnerabilities, and credentials.
+
+- **Search** filters rows by IP address or hostname.
+- **Source**: notes with `type: host`. Service, vuln, and credential counts are pulled from notes sharing the same IP.
+
+To make a host appear on the IP tab, create a note with this frontmatter:
+
+```yaml
+---
+type: host
+ip: 192.168.1.10
+hostname: webserver
+os: Ubuntu 22.04
+status: up
+---
+```
+
+### Port Tab
+
+The Port tab shows all service notes grouped by port number. Each row displays port, protocol, service name, version, IP, and status.
+
+- **Search** filters rows by port number or service name.
+- **Source**: notes with `type: service`. If `port` is missing or non-numeric, it defaults to 0.
+
+To make a service appear on the Port tab:
+
+```yaml
+---
+type: service
+ip: 192.168.1.10
+port: 443
+protocol: tcp
+service: https
+version: nginx 1.24.0
+status: open
+---
+```
+
+### Timeline Tab
+
+The Timeline tab shows vulnerability and credential notes sorted chronologically by their `found` field. Only notes with a valid `found` date appear.
+
+- **Date format**: `YYYY-MM-DD HH:MM` (e.g. `2024-03-15 14:30`). Notes with missing or malformed `found` fields are excluded.
+- Use the **from/to date pickers** to filter by date range.
+- **Source**: vuln notes (`type: vuln`) and credential notes (`type: credential`) with a `found` field.
+
+Vulnerability note example:
+
+```yaml
+---
+type: vuln
+ip: 192.168.1.10
+severity: high
+port: 443
+service: https
+found: 2024-03-15 14:30
+status: open
+tags: [ssl, misconfig]
+---
+```
+
+Credential note example:
+
+```yaml
+---
+type: credential
+ip: 192.168.1.10
+username: admin
+domain: corp.local
+found: 2024-03-15 15:00
+---
+```
+
+### Vulnerability Tab
+
+The Vulnerability tab shows all vuln notes grouped by severity level.
+
+- **Severity order**: critical → high → medium → low → info.
+- If `severity` is missing or invalid, it defaults to `info`.
+- **Search** filters by IP address, service name, or tag.
+- **Source**: notes with `type: vuln`.
+
+```yaml
+---
+type: vuln
+ip: 192.168.1.10
+severity: critical
+port: 22
+service: ssh
+status: open
+tags: [rce, cve-2024-1234]
+---
+```
+
+### Heatmap Tab
+
+The Heatmap tab visualizes the full IP address space as a color-coded spatial grid. All note types (host, service, vuln, credential) contribute IPs to the heatmap.
+
+- **Top level**: 256 cells — one per /8 block (first octet). Cell `10` covers all IPs `10.x.x.x`.
+- **Click** a cell → drills into the /16 view (second octet grid).
+- **Click** again → /24 view (third octet grid).
+- **Click** again → individual IP view (fourth octet).
+- **Click** an IP cell → opens that host's note file directly.
+- **Navigation**: A back button (e.g. `◀ Back | /8 = 10`) returns you one level up at each depth.
+- **Color intensity** reflects note count at that address block — darker means more notes.
+- **No text search** on this tab — it is a spatial navigation view only.
+- IPv6 addresses are not shown in the heatmap.
+
+```yaml
+---
+type: host
+ip: 10.0.7.15
+hostname: jumpbox
+status: up
+---
+```
+
+### Importer → Tab Mapping
+
+| Importer | IP Tab | Port Tab | Timeline | Vuln Tab | Heatmap |
+|---|---|---|---|---|---|
+| Nmap XML | ✓ | ✓ | — | — | ✓ |
+| Nmap Grepable | ✓ | ✓ | — | — | ✓ |
+| Nmap Normal Text | ✓ | ✓ | — | — | ✓ |
+| Masscan | ✓ | ✓ | — | — | ✓ |
+| Nessus CSV | — | — | ✓ | ✓ | ✓ |
+| Burp Suite XML | — | — | — | ✓ | ✓ |
+| OpenVAS XML | — | — | — | ✓ | ✓ |
+| Nuclei JSONL | — | — | — | ✓ | ✓ |
+| WhatWeb JSON | — | ✓ | — | — | ✓ |
+| Nikto text | — | — | — | ✓ | ✓ |
+| iSeeU Custom JSONL | ✓ | ✓ | — | — | ✓ |
 
 ## Importing Scans
 
@@ -286,7 +448,7 @@ dirsearch -u http://<target> -o dirsearch-output.json --format=json
 ## Limitations
 
 - **Settings UI**: A settings panel is available to configure the Watched Folder path.
-- **No Search/Filter**: Use Obsidian's native search or the dashboard tabs to find data.
+- **Search**: Search is available on the IP, Port, Timeline, and Vulnerability tabs. The Heatmap tab is spatial and does not support text search.
 - **No Report Export**: The plugin is for viewing and managing data within Obsidian.
 - **Standalone**: Does not integrate with Dataview or other third-party plugins.
 - **Plain DOM**: Built using Obsidian's native `createEl` API without React or Svelte.

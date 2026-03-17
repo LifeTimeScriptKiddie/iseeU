@@ -658,26 +658,29 @@ function buildHeatmapData(data) {
   const allIPs = /* @__PURE__ */ new Set([
     ...data.hosts.map((h) => h.ip),
     ...data.services.map((s) => s.ip),
-    ...data.vulns.map((v) => v.ip)
+    ...data.vulns.map((v) => v.ip),
+    ...data.credentials.map((c) => c.ip)
   ]);
   for (const ip of allIPs) {
     const octets = parseIPv4(ip);
     if (!octets)
       continue;
     const [a, b, c, d] = octets;
-    const prefix = `${a}.${b}`;
-    if (!result.has(prefix))
-      result.set(prefix, /* @__PURE__ */ new Map());
-    const byThird = result.get(prefix);
-    if (!byThird.has(c))
-      byThird.set(c, /* @__PURE__ */ new Map());
-    const byFourth = byThird.get(c);
+    if (!result.has(a))
+      result.set(a, /* @__PURE__ */ new Map());
+    const byB = result.get(a);
+    if (!byB.has(b))
+      byB.set(b, /* @__PURE__ */ new Map());
+    const byC = byB.get(b);
+    if (!byC.has(c))
+      byC.set(c, /* @__PURE__ */ new Map());
+    const byD = byC.get(c);
     const ports = [...new Set(data.services.filter((s) => s.ip === ip).map((s) => s.port))];
     const sevs = data.vulns.filter((v) => v.ip === ip).map((v) => v.severity);
     const severity = highestSeverity(sevs);
     const hostFile = (_b = (_a = data.hosts.find((h) => h.ip === ip)) == null ? void 0 : _a.file) != null ? _b : null;
     const vulnFile = (_d = (_c = data.vulns.find((v) => v.ip === ip)) == null ? void 0 : _c.file) != null ? _d : null;
-    byFourth.set(d, { ip, ports, severity, hostFile, vulnFile });
+    byD.set(d, { ip, ports, severity, hostFile, vulnFile });
   }
   return result;
 }
@@ -688,7 +691,7 @@ var ISeeUView = class extends import_obsidian.ItemView {
     this.tabButtons = [];
     this.filterFrom = "";
     this.filterTo = "";
-    this.heatmapDrilldown = null;
+    this.heatmapDrilldown = [];
     this.searchQuery = "";
   }
   getViewType() {
@@ -1016,89 +1019,173 @@ var ISeeUView = class extends import_obsidian.ItemView {
     }
   }
   renderHeatmapView(data) {
-    var _a;
+    var _a, _b, _c;
     if (data.hosts.length === 0 && data.services.length === 0 && data.vulns.length === 0 && data.credentials.length === 0) {
       this.renderEmptyState();
       return;
     }
     const heatmapData = buildHeatmapData(data);
+    const d = this.heatmapDrilldown;
     const breadcrumb = this.contentContainer.createEl("div", { cls: "iu-heatmap-breadcrumb" });
-    if (this.heatmapDrilldown !== null) {
+    if (d.length === 0) {
+      breadcrumb.setText("IP Heatmap");
+    } else if (d.length === 1) {
       const back = breadcrumb.createEl("span", { cls: "iu-heatmap-back" });
-      back.setText(`\u25C0 All subnets > ${this.heatmapDrilldown}.x`);
+      back.setText(`\u25C0 Back | /8 = ${d[0]}`);
       back.addEventListener("click", () => {
-        this.heatmapDrilldown = null;
+        this.heatmapDrilldown = this.heatmapDrilldown.slice(0, -1);
         this.refresh();
       });
-    } else {
-      breadcrumb.setText("IP Heatmap");
+    } else if (d.length === 2) {
+      const back = breadcrumb.createEl("span", { cls: "iu-heatmap-back" });
+      back.setText(`\u25C0 Back | /16 = ${d[0]}.${d[1]}`);
+      back.addEventListener("click", () => {
+        this.heatmapDrilldown = this.heatmapDrilldown.slice(0, -1);
+        this.refresh();
+      });
+    } else if (d.length === 3) {
+      const back = breadcrumb.createEl("span", { cls: "iu-heatmap-back" });
+      back.setText(`\u25C0 Back | /24 = ${d[0]}.${d[1]}.${d[2]}`);
+      back.addEventListener("click", () => {
+        this.heatmapDrilldown = this.heatmapDrilldown.slice(0, -1);
+        this.refresh();
+      });
     }
     if (heatmapData.size === 0) {
       this.contentContainer.createEl("p", { text: "No valid IPv4 addresses found in vault.", cls: "iu-empty-hint" });
       return;
     }
-    if (this.heatmapDrilldown !== null) {
-      const parts = this.heatmapDrilldown.split(".");
-      const prefix16 = `${parts[0]}.${parts[1]}`;
-      const thirdOctet = parseInt(parts[2], 10);
-      const byThird = heatmapData.get(prefix16);
-      const byFourth = (_a = byThird == null ? void 0 : byThird.get(thirdOctet)) != null ? _a : /* @__PURE__ */ new Map();
-      let maxPorts = 0;
-      for (const cell of byFourth.values()) {
-        if (cell.ports.length > maxPorts)
-          maxPorts = cell.ports.length;
-      }
-      const grid = this.contentContainer.createEl("div", { cls: "iu-heatmap-grid" });
-      for (let i = 0; i < 256; i++) {
-        const cell = grid.createEl("div", { cls: "iu-heatmap-cell" });
-        const label = cell.createEl("span", { cls: "iu-heatmap-cell-label" });
-        label.setText(String(i).padStart(3, "0"));
-        const hostData = byFourth.get(i);
-        if (hostData) {
-          cell.addClass("iu-heatmap-cell--data");
-          if (hostData.severity) {
-            cell.style.backgroundColor = SEVERITY_COLORS[hostData.severity];
+    switch (this.heatmapDrilldown.length) {
+      case 0: {
+        const keys = [...heatmapData.keys()].sort((a, b) => a - b);
+        for (const a of keys) {
+          const byB = heatmapData.get(a);
+          this.contentContainer.createEl("div", { text: `${a}.x.x.x`, cls: "iu-heatmap-section-label" });
+          let maxPorts = 0;
+          for (const byC of byB.values()) {
+            for (const byD of byC.values()) {
+              for (const cell of byD.values()) {
+                if (cell.ports.length > maxPorts)
+                  maxPorts = cell.ports.length;
+              }
+            }
           }
-          cell.style.opacity = String(portCountToOpacity(hostData.ports.length, maxPorts));
-          const first10 = hostData.ports.slice(0, 10);
-          const portsStr = first10.join(", ") + (hostData.ports.length > 10 ? ` ... +${hostData.ports.length - 10} more` : "");
-          const sevStr = hostData.severity ? hostData.severity.toUpperCase() : "NONE";
-          cell.title = `${hostData.ip} | Ports: ${portsStr} | Severity: ${sevStr}`;
-          cell.addEventListener("click", () => {
-            var _a2;
-            const file = (_a2 = hostData.hostFile) != null ? _a2 : hostData.vulnFile;
-            if (file)
-              this.app.workspace.getLeaf(false).openFile(file);
-          });
-        } else {
-          cell.addClass("iu-heatmap-cell--empty");
+          const grid = this.contentContainer.createEl("div", { cls: "iu-heatmap-grid" });
+          for (let b = 0; b < 256; b++) {
+            const cellEl = grid.createEl("div", { cls: "iu-heatmap-cell" });
+            const label = cellEl.createEl("span", { cls: "iu-heatmap-cell-label" });
+            label.setText(String(b).padStart(3, "0"));
+            const byC = byB.get(b);
+            if (byC && byC.size > 0) {
+              cellEl.addClass("iu-heatmap-cell--data");
+              const allSevs = [];
+              let maxPortsInSubnet = 0;
+              let hostCount = 0;
+              let serviceCount = 0;
+              for (const byD of byC.values()) {
+                for (const cell of byD.values()) {
+                  hostCount++;
+                  if (cell.severity)
+                    allSevs.push(cell.severity);
+                  serviceCount += cell.ports.length;
+                  if (cell.ports.length > maxPortsInSubnet)
+                    maxPortsInSubnet = cell.ports.length;
+                }
+              }
+              const topSev = highestSeverity(allSevs);
+              if (topSev) {
+                cellEl.style.backgroundColor = SEVERITY_COLORS[topSev];
+              }
+              cellEl.style.opacity = String(portCountToOpacity(maxPortsInSubnet, maxPorts));
+              const sevStr = topSev ? topSev.toUpperCase() : "NONE";
+              cellEl.title = `${a}.${b}.x.x \u2014 ${hostCount} hosts, ${serviceCount} services, highest: ${sevStr}`;
+              cellEl.addEventListener("click", () => {
+                this.heatmapDrilldown = [a, b];
+                this.refresh();
+              });
+            } else {
+              cellEl.addClass("iu-heatmap-cell--empty");
+            }
+          }
         }
+        break;
       }
-    } else {
-      const prefixes = [...heatmapData.keys()].sort();
-      for (const prefix of prefixes) {
-        const byThird = heatmapData.get(prefix);
-        this.contentContainer.createEl("div", { text: `${prefix}.x.x`, cls: "iu-heatmap-section-label" });
+      case 1: {
+        const byB = heatmapData.get(d[0]);
+        if (!byB)
+          break;
         let maxPorts = 0;
-        for (const byFourth of byThird.values()) {
-          for (const cell of byFourth.values()) {
-            if (cell.ports.length > maxPorts)
-              maxPorts = cell.ports.length;
+        for (const byC of byB.values()) {
+          for (const byD of byC.values()) {
+            for (const cell of byD.values()) {
+              if (cell.ports.length > maxPorts)
+                maxPorts = cell.ports.length;
+            }
           }
         }
         const grid = this.contentContainer.createEl("div", { cls: "iu-heatmap-grid" });
-        for (let i = 0; i < 256; i++) {
+        for (let b = 0; b < 256; b++) {
           const cellEl = grid.createEl("div", { cls: "iu-heatmap-cell" });
           const label = cellEl.createEl("span", { cls: "iu-heatmap-cell-label" });
-          label.setText(String(i).padStart(3, "0"));
-          const byFourth = byThird.get(i);
-          if (byFourth && byFourth.size > 0) {
+          label.setText(String(b).padStart(3, "0"));
+          const byC = byB.get(b);
+          if (byC && byC.size > 0) {
             cellEl.addClass("iu-heatmap-cell--data");
             const allSevs = [];
             let maxPortsInSubnet = 0;
             let hostCount = 0;
             let serviceCount = 0;
-            for (const cell of byFourth.values()) {
+            for (const byD of byC.values()) {
+              for (const cell of byD.values()) {
+                hostCount++;
+                if (cell.severity)
+                  allSevs.push(cell.severity);
+                serviceCount += cell.ports.length;
+                if (cell.ports.length > maxPortsInSubnet)
+                  maxPortsInSubnet = cell.ports.length;
+              }
+            }
+            const topSev = highestSeverity(allSevs);
+            if (topSev) {
+              cellEl.style.backgroundColor = SEVERITY_COLORS[topSev];
+            }
+            cellEl.style.opacity = String(portCountToOpacity(maxPortsInSubnet, maxPorts));
+            const sevStr = topSev ? topSev.toUpperCase() : "NONE";
+            cellEl.title = `${d[0]}.${b}.x.x \u2014 ${hostCount} hosts, ${serviceCount} services, highest: ${sevStr}`;
+            cellEl.addEventListener("click", () => {
+              this.heatmapDrilldown = [d[0], b];
+              this.refresh();
+            });
+          } else {
+            cellEl.addClass("iu-heatmap-cell--empty");
+          }
+        }
+        break;
+      }
+      case 2: {
+        const byC = (_a = heatmapData.get(d[0])) == null ? void 0 : _a.get(d[1]);
+        if (!byC)
+          break;
+        let maxPorts = 0;
+        for (const byD of byC.values()) {
+          for (const cell of byD.values()) {
+            if (cell.ports.length > maxPorts)
+              maxPorts = cell.ports.length;
+          }
+        }
+        const grid = this.contentContainer.createEl("div", { cls: "iu-heatmap-grid" });
+        for (let c = 0; c < 256; c++) {
+          const cellEl = grid.createEl("div", { cls: "iu-heatmap-cell" });
+          const label = cellEl.createEl("span", { cls: "iu-heatmap-cell-label" });
+          label.setText(String(c).padStart(3, "0"));
+          const byD = byC.get(c);
+          if (byD && byD.size > 0) {
+            cellEl.addClass("iu-heatmap-cell--data");
+            const allSevs = [];
+            let maxPortsInSubnet = 0;
+            let hostCount = 0;
+            let serviceCount = 0;
+            for (const cell of byD.values()) {
               hostCount++;
               if (cell.severity)
                 allSevs.push(cell.severity);
@@ -1112,15 +1199,58 @@ var ISeeUView = class extends import_obsidian.ItemView {
             }
             cellEl.style.opacity = String(portCountToOpacity(maxPortsInSubnet, maxPorts));
             const sevStr = topSev ? topSev.toUpperCase() : "NONE";
-            cellEl.title = `${prefix}.${i}.x \u2014 ${hostCount} hosts, ${serviceCount} services, highest: ${sevStr}`;
+            cellEl.title = `${d[0]}.${d[1]}.${c}.x \u2014 ${hostCount} hosts, ${serviceCount} services, highest: ${sevStr}`;
             cellEl.addEventListener("click", () => {
-              this.heatmapDrilldown = `${prefix}.${i}`;
+              this.heatmapDrilldown = [d[0], d[1], c];
               this.refresh();
             });
           } else {
             cellEl.addClass("iu-heatmap-cell--empty");
           }
         }
+        break;
+      }
+      case 3: {
+        const byD = (_c = (_b = heatmapData.get(d[0])) == null ? void 0 : _b.get(d[1])) == null ? void 0 : _c.get(d[2]);
+        if (!byD)
+          break;
+        let maxPorts = 0;
+        for (const cell of byD.values()) {
+          if (cell.ports.length > maxPorts)
+            maxPorts = cell.ports.length;
+        }
+        const grid = this.contentContainer.createEl("div", { cls: "iu-heatmap-grid" });
+        for (let i = 0; i < 256; i++) {
+          const cellEl = grid.createEl("div", { cls: "iu-heatmap-cell" });
+          const label = cellEl.createEl("span", { cls: "iu-heatmap-cell-label" });
+          label.setText(String(i).padStart(3, "0"));
+          const hostData = byD.get(i);
+          if (hostData) {
+            cellEl.addClass("iu-heatmap-cell--data");
+            if (hostData.severity) {
+              cellEl.style.backgroundColor = SEVERITY_COLORS[hostData.severity];
+            }
+            cellEl.style.opacity = String(portCountToOpacity(hostData.ports.length, maxPorts));
+            const first10 = hostData.ports.slice(0, 10);
+            const portsStr = first10.join(", ") + (hostData.ports.length > 10 ? ` ... +${hostData.ports.length - 10} more` : "");
+            const sevStr = hostData.severity ? hostData.severity.toUpperCase() : "NONE";
+            cellEl.title = `${hostData.ip} | Ports: ${portsStr} | Severity: ${sevStr}`;
+            cellEl.addEventListener("click", () => {
+              var _a2;
+              const file = (_a2 = hostData.hostFile) != null ? _a2 : hostData.vulnFile;
+              if (file)
+                this.app.workspace.getLeaf(false).openFile(file);
+            });
+          } else {
+            cellEl.addClass("iu-heatmap-cell--empty");
+          }
+        }
+        break;
+      }
+      default: {
+        this.heatmapDrilldown = [];
+        this.renderHeatmapView(data);
+        return;
       }
     }
   }
@@ -1172,6 +1302,7 @@ function sanitizePathSegment(s) {
 function ipToFolderParts(ip) {
   if (ip.includes(":")) {
     return {
+      slash8: "ipv6",
       slash16: "ipv6",
       slash24: "ipv6",
       ipDir: sanitizePathSegment(ip)
@@ -1179,14 +1310,15 @@ function ipToFolderParts(ip) {
   }
   const parts = ip.split(".");
   return {
+    slash8: parts[0],
     slash16: parts.slice(0, 2).join("."),
     slash24: parts.slice(0, 3).join("."),
     ipDir: ip
   };
 }
 function buildFolderPath(ip) {
-  const { slash16, slash24, ipDir } = ipToFolderParts(ip);
-  return `${ROOT}/${slash16}/${slash24}/${ipDir}`;
+  const { slash8, slash16, slash24, ipDir } = ipToFolderParts(ip);
+  return `${ROOT}/${slash8}/${slash16}/${slash24}/${ipDir}`;
 }
 function buildHostPath(ip) {
   const { ipDir } = ipToFolderParts(ip);
@@ -1201,12 +1333,13 @@ function buildVulnPath(ip, name) {
   return `${buildFolderPath(ip)}/vuln-${sanitizedName}.md`;
 }
 async function ensureFolderHierarchy(vault, ip) {
-  const { slash16, slash24, ipDir } = ipToFolderParts(ip);
+  const { slash8, slash16, slash24, ipDir } = ipToFolderParts(ip);
   const folders = [
     ROOT,
-    `${ROOT}/${slash16}`,
-    `${ROOT}/${slash16}/${slash24}`,
-    `${ROOT}/${slash16}/${slash24}/${ipDir}`
+    `${ROOT}/${slash8}`,
+    `${ROOT}/${slash8}/${slash16}`,
+    `${ROOT}/${slash8}/${slash16}/${slash24}`,
+    `${ROOT}/${slash8}/${slash16}/${slash24}/${ipDir}`
   ];
   for (const folder of folders) {
     await vault.createFolder(folder).catch(() => {
