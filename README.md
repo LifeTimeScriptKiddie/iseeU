@@ -25,8 +25,8 @@ Run these commands and drop the output files into iSeeU via **Import scan files.
 | **WhatWeb** | `whatweb -a3 http://<target>` | `--log-json=scan.json` | `.json` | Technology fingerprinting → service notes |
 | **Nikto** | `nikto -h http://<target>` | `-o scan.txt` | `.txt` | Web findings → vuln notes (info severity) |
 | **iSeeU Custom** | `bash iseeu-scan.sh <target> 22,80,443` | *(built-in)* | `.json` | nc + curl scanner, see custom scanner section |
-| **dirsearch** | `dirsearch -u http://<target>` | `-o out.json --format=json` | `.json` | ⚠️ Not imported — manual review only |
-| **ffuf** | `ffuf -u http://<target>/FUZZ -w list.txt` | `-o out.json -of json` | `.json` | ⚠️ Not imported — manual review only |
+| **dirsearch** | `dirsearch -u http://<target>` | `-o out.json --format=json` | `.json` | Root response → service note (path / only) |
+| **ffuf** | `ffuf -u http://<target>/FUZZ -w list.txt` | `-o out.json -of json` | `.json` | Root response → service note (path / only) |
 
 ## Features
 
@@ -43,6 +43,8 @@ Run these commands and drop the output files into iSeeU via **Import scan files.
 - **Nikto Import**: Import Nikto text scan output as vulnerability notes.
 - **Burp Suite Import**: Import Burp Suite Scanner Issues XML into vulnerability notes.
 - **iSeeU Custom Scanner**: Import output from your own nc+curl scanner tool (JSONL format).
+- **ffuf Import**: Import ffuf JSON directory fuzzing results as service notes (root response only).
+- **dirsearch Import**: Import dirsearch JSON directory fuzzing results as service notes (root response only).
 - **Watched Folder**: Automatically import scan files dropped into a configured vault folder.
 - **Timeline Filter**: Filter the Timeline view by date range using from/to date pickers.
 
@@ -254,6 +256,8 @@ status: up
 | WhatWeb JSON | — | ✓ | — | — | ✓ |
 | Nikto text | — | — | — | ✓ | ✓ |
 | iSeeU Custom JSONL | ✓ | ✓ | — | — | ✓ |
+| ffuf JSON | — | ✓ | — | — | ✓ |
+| dirsearch JSON | — | ✓ | — | — | ✓ |
 
 ## Importing Scans
 
@@ -320,6 +324,18 @@ iSeeU supports importing results from 11 scanning tools. Use the **Import scan f
 2. Use the **Import scan files...** command in Obsidian.
 3. Select your `.txt` file.
 4. The plugin creates **Vulnerability** notes (info severity) for each finding.
+
+### ffuf
+1. Run ffuf and save JSON output: `ffuf -u http://<target>/FUZZ -w /path/to/wordlist.txt -o ffuf.json -of json -mc 200`.
+2. Use the **Import scan files...** command in Obsidian.
+3. Select your `.json` file.
+4. The plugin creates a **Service** note for the web root response (HTTP 200 at `/`). Non-root results are ignored.
+
+### dirsearch
+1. Run dirsearch and save JSON output: `dirsearch -u http://<target> -o dirsearch.json --format=json`.
+2. Use the **Import scan files...** command in Obsidian.
+3. Select your `.json` file.
+4. The plugin creates a **Service** note for the web root response (HTTP 200 at `/`). Non-root results are ignored.
 
 ### iSeeU Custom Scanner
 
@@ -430,8 +446,6 @@ ffuf -u http://<target>/FUZZ -w /path/to/wordlist.txt -o ffuf-output.json -of js
 dirsearch -u http://<target> -o dirsearch-output.json --format=json
 ```
 
-> **Note**: ffuf and dirsearch outputs are **not** imported by iSeeU. Use them for manual review only.
-
 ## Commands
 
 | Command | Description |
@@ -442,7 +456,7 @@ dirsearch -u http://<target> -o dirsearch-output.json --format=json
 | `Create Service Note` | Generates a new service note from a template. |
 | `Create Vulnerability Note` | Generates a new vulnerability note from a template. |
 | `Create Credential Note` | Generates a new credential note from a template. |
-| `Import scan files...` | Opens a file picker (supports multi-select). Auto-detects format from content. Supports: Nmap XML, Nmap Grepable, Nmap Normal Text, Masscan XML/JSON, Burp Suite XML, OpenVAS XML, Nessus CSV, Nuclei JSONL, WhatWeb JSON, Nikto text, iSeeU Custom JSONL. |
+| `Import scan files...` | Opens a file picker (supports multi-select). Auto-detects format from content. Supports: Nmap XML, Nmap Grepable, Nmap Normal Text, Masscan XML/JSON, Burp Suite XML, OpenVAS XML, Nessus CSV, Nuclei JSONL, WhatWeb JSON, Nikto text, iSeeU Custom JSONL, ffuf JSON, dirsearch JSON. |
 | `Import Folder (Recursive)` | Recursively imports all importable scan files from a selected vault folder. |
 
 ## Limitations
@@ -452,7 +466,7 @@ dirsearch -u http://<target> -o dirsearch-output.json --format=json
 - **No Report Export**: The plugin is for viewing and managing data within Obsidian.
 - **Standalone**: Does not integrate with Dataview or other third-party plugins.
 - **Plain DOM**: Built using Obsidian's native `createEl` API without React or Svelte.
-- **Supported Formats**: Nmap XML (`-oX`), Nmap Grepable (`-oG`), Nmap Normal Text (`-oN`), Masscan (XML/JSON), Burp Suite XML, OpenVAS/Greenbone XML, Nessus CSV, Nuclei JSONL, WhatWeb JSON, Nikto text, iSeeU Custom JSONL.
+- **Supported Formats**: Nmap XML (`-oX`), Nmap Grepable (`-oG`), Nmap Normal Text (`-oN`), Masscan (XML/JSON), Burp Suite XML, OpenVAS/Greenbone XML, Nessus CSV, Nuclei JSONL, WhatWeb JSON, Nikto text, iSeeU Custom JSONL, ffuf JSON (`-of json`), dirsearch JSON (`--format=json`).
 
 ## Development
 
